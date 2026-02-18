@@ -37,16 +37,14 @@ def args_init():
     parser.add_argument(
         "--model",
         type=int,
-        default=1,
-        help="Instruct_CodeGen = 0, WizardCoder = 1, Instruct_StarCoder = 2, InCoder = 3, \
-        PolyCoder = 4, SantaCoder = 5, Vicuna = 6, ChatGLM = 7, GPT_3_5 = 8, GPT_4 = 9, others = 10, \
-        Magicoder = 11, CodeGeeX2 = 12, DeepSeekCoder_inst = 13, Gemini_Pro = 14, CodeLlama_13b_inst = 15",
+        default=2,
+        help="DEEPSEEK_API = 0, QWEN_CODER = 1, QWEN_CODER_INST = 2",
     )
     parser.add_argument(
-        "--checkpoint",
+        "--model_path",
         type=str,
-        default="WizardLM/WizardCoder-15B-V1.0",
-        help="checkpoint of the model",
+        default="/data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct",
+        help="model path",
     )
     parser.add_argument(
         "--temperature",
@@ -55,36 +53,22 @@ def args_init():
         help="temperature value in generation config",
     )
     parser.add_argument(
-        "--max_length",
+        "--max_tokens",
         type=int,
         default=2048,
-        help="max length of model's generation result",
+        help="max tokens of model's generation result",
     )
-    parser.add_argument(
-        "--openai_key",
-        type=str,
-        default="openai_key",
-        help="need openai key if use GPT-3.5 or GPT-4",
-    )
-    parser.add_argument(
-        "--openai_base",
-        type=str,
-        default="openai_base",
-        help="need openai base if use GPT-3.5 or GPT-4",
-    )
-
-    parser.add_argument(
-        "--google_api_key",
-        type=str,
-        default="google_api_key",
-        help="need google api key if use Gemini Pro",
-    )
-
     parser.add_argument(
         "--sample",
         type=int,
-        default=5,
+        default=1,
         help="The number of code samples that are randomly generated for each task.",
+    )
+    parser.add_argument(
+        "--pred_path",
+        type=str,
+        default="/data0/xjh/ClassEval/expriment_outputs/qwen_inst_predictions_hoslitic",
+        help="pred output path",
     )
     args = parser.parse_args()
     return args
@@ -92,5 +76,6 @@ def args_init():
 if __name__ == '__main__':
 
     args = args_init()
+    print("args:", args)
     infer = InferencePipeline(args)
     infer.pipeline()

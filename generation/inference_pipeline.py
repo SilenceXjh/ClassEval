@@ -5,6 +5,7 @@ from tqdm import tqdm
 from inference_util import InferenceUtil, ModelName, GenerationStrategy
 import os
 import openai
+from openai import OpenAI
 
 class InferencePipeline:
 
@@ -18,146 +19,108 @@ class InferencePipeline:
             os.environ["CUDA_VISIBLE_DEVICES"] = ','.join([str(i) for i in args.cuda])
         self.generation_strategy = args.generation_strategy
         self.model_name = args.model
-        self.checkpoint = args.checkpoint
+        self.model_path = args.model_path
         self.temperature = args.temperature
-        self.max_length = args.max_length
-        self.openai_key = args.openai_key
-        self.openai_base = args.openai_base
-        self.google_api_key = args.google_api_key
+        self.max_tokens = args.max_tokens
+        self.pred_path = args.pred_path
 
         self.get_model_tokenizer_and_config()
         self.SAMPLE_NUMS = 1 if self.greedy == 1 else args.sample
         self.do_sample = False if self.greedy == 1 else True
 
     def get_model_tokenizer_and_config(self):
-        if self.model_name == ModelName.GPT_3_5.value or self.model_name == ModelName.GPT_4.value:
-            return
-        elif self.model_name == ModelName.Gemini_Pro.value:
-            import google.generativeai as genai
-            genai.configure(api_key = self.google_api_key, transport = 'rest')
-            safety_settings = [
-                {
-                    "category": "HARM_CATEGORY_HARASSMENT",
-                    "threshold": "BLOCK_NONE"
-                },
-                {
-                    "category": "HARM_CATEGORY_HATE_SPEECH",
-                    "threshold": "BLOCK_NONE"
-                },
-                {
-                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    "threshold": "BLOCK_NONE"
-                },
-                {
-                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                    "threshold": "BLOCK_NONE"
-                },
-            ]
-
-            # Set up the model
-            generation_config = {
-                "temperature": 0 if self.greedy == 1 else self.temperature,
-                "top_p": 1,
-                "top_k": 1,
-                "max_output_tokens": self.max_length,
-            }
-            self.model = genai.GenerativeModel(model_name = "gemini-pro", generation_config = generation_config, safety_settings = safety_settings)
-        elif self.model_name == ModelName.ChatGLM.value:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.checkpoint, trust_remote_code = True)
-            self.model = AutoModel.from_pretrained(self.checkpoint, trust_remote_code = True, device_map="auto").half()
-            self.model = self.model.eval()
-        elif self.model_name == ModelName.PolyCoder.value or self.model_name == ModelName.SantaCoder.value:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.checkpoint, trust_remote_code = True)
-            self.model = AutoModelForCausalLM.from_pretrained(self.checkpoint, trust_remote_code = True, device_map="auto")
-            self.model = self.model.eval()
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-            self.generation_config = GenerationConfig(
-                temperature = self.temperature,
-                eos_token_id = self.tokenizer.eos_token_id,
-                pad_token_id = self.tokenizer.pad_token_id,
-                do_sample = True
-            ) if self.greedy == 0 else GenerationConfig(
-                eos_token_id = self.tokenizer.eos_token_id,
-                pad_token_id = self.tokenizer.pad_token_id
-            )
+        if self.model_name == ModelName.DEEPSEEK_API.value:
+            self.client = OpenAI(api_key=os.environ.get('DEEPSEEK_API_KEY'), base_url="https://api.deepseek.com")
+        
         else:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.checkpoint, trust_remote_code = True)
-            self.model = AutoModelForCausalLM.from_pretrained(self.checkpoint, trust_remote_code = True, torch_dtype = torch.float16, device_map="auto")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code = True)
+            self.model = AutoModelForCausalLM.from_pretrained(self.model_path, trust_remote_code = True, torch_dtype = torch.bfloat16, device_map="auto")
             self.model = self.model.eval()
-            self.generation_config = GenerationConfig(
-                temperature = self.temperature,
-                eos_token_id = self.tokenizer.eos_token_id,
-                pad_token_id = self.tokenizer.pad_token_id,
-                do_sample = True
-            ) if self.greedy == 0 else GenerationConfig(
-                eos_token_id = self.tokenizer.eos_token_id,
-                pad_token_id = self.tokenizer.pad_token_id
-            )
+            # self.generation_config = GenerationConfig(
+            #     temperature = self.temperature,
+            #     eos_token_id = self.tokenizer.eos_token_id,
+            #     pad_token_id = self.tokenizer.pad_token_id,
+            #     do_sample = True
+            # ) if self.greedy == 0 else GenerationConfig(
+            #     eos_token_id = self.tokenizer.eos_token_id,
+            #     pad_token_id = self.tokenizer.pad_token_id
+            # )
 
     def save_result(self, result):
         with open(self.output_path, 'w', encoding = 'utf-8') as f:
             json.dump(result, f, indent=4)
 
     def model_generate(self, prompt):
-        if self.model_name == ModelName.GPT_3_5.value or self.model_name == ModelName.GPT_4.value:
-            openai.api_key = self.openai_key
-            openai.api_base = self.openai_base
-            if self.model_name == ModelName.GPT_3_5.value:
-                response = openai.ChatCompletion.create(
-                    max_tokens=self.max_length,
-                    temperature=0 if self.greedy == 1 else self.temperature,
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-            elif self.model_name == ModelName.GPT_4.value:
-                response = openai.ChatCompletion.create(
-                    max_tokens=self.max_length,
-                    temperature=0 if self.greedy == 1 else self.temperature,
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-            outputs = response.choices[0]["message"]["content"]
-        elif self.model_name == ModelName.Gemini_Pro.value:
-            prompt_parts = [prompt]
-            response = self.model.generate_content(prompt_parts)
-            outputs = response.text
-        elif self.model_name == ModelName.DeepSeekCoder_inst.value:
-            messages=[
-                { "role": "user", "content": prompt }
+        if self.model_name == ModelName.DEEPSEEK_API:
+            response = self.client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": "You are an expert Python programmer."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                n=1,
+                stream=False
+            )
+            generated_text = response.choices[0].message.content
+        
+        elif self.model_name == ModelName.QWEN_CODER_INST.value:
+            messages = [
+                {"role": "system", "content": "You are an expert Python programmer."},
+                {"role": "user", "content": prompt}
             ]
-            input_ids = self.tokenizer.apply_chat_template(messages, add_generation_prompt = True, return_tensors = "pt",
-                                                           max_length = self.max_length, truncation = True).to(self.cuda)
-            # 32021 is the id of <|EOT|> token
-            outputs = self.model.generate(input_ids, generation_config = self.generation_config, 
-                                          max_length = self.max_length, do_sample = self.do_sample, eos_token_id = 32021)
-            outputs = self.tokenizer.decode(outputs[0], skip_special_tokens = True)
-        elif self.model_name == ModelName.ChatGLM.value:
-            outputs, _ = self.model.chat(self.tokenizer, prompt, temperature = self.temperature, do_sample = self.do_sample)
+            text = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
+            #print("model input text:", text)
+            inputs = self.tokenizer(text, return_tensors="pt").to(self.model.device)
+            
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=self.max_tokens, 
+                    temperature=0.2,
+                    top_p=0.95,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.eos_token_id
+                )
+            
+            generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            # 提取
+            if prompt in generated_text:
+                generated_text = generated_text.split(prompt)[-1].strip()
+        
         else:
-            input_ids = self.tokenizer.encode(prompt, return_tensors = "pt", max_length = self.max_length, truncation = True).to(self.cuda)
-            outputs = self.model.generate(input_ids, generation_config = self.generation_config, 
-                                            max_length = self.max_length, do_sample = self.do_sample)
-            outputs = self.tokenizer.decode(outputs[0], skip_special_tokens = True)
-        return outputs
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+    
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=self.max_tokens,
+                    temperature=0.2,
+                    top_p=0.95,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.eos_token_id
+                )
+            
+            generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            if prompt in generated_text:
+                generated_text = generated_text.split(prompt)[-1].strip()
+        
+        code = InferenceUtil.extract_python_code(generated_text)
+        return code
 
     def construct_prompt(self, strategy, info):
         prompt = ""
         if strategy == GenerationStrategy.Holistic:
-            if self.model_name == ModelName.PolyCoder.value or self.model_name == ModelName.SantaCoder.value:
-                skeleton = info['skeleton']
-                prompt = skeleton
-            else:
-                class_name = info['class_name']
-                skeleton = info['skeleton']
-                instruction = f"Please complete the class {class_name} in the following code."
-                instruction = instruction + '\n' + skeleton
-                prompt = InferenceUtil.generate_prompt(instruction, self.model_name)
+            class_name = info['class_name']
+            skeleton = info['skeleton']
+            instruction = f"Please complete the class {class_name} in the following code."
+            instruction = instruction + '\n' + skeleton
+            prompt = InferenceUtil.generate_prompt(instruction, self.model_name)
 
         elif strategy == GenerationStrategy.Incremental:
             if self.model_name == ModelName.PolyCoder.value or self.model_name == ModelName.SantaCoder.value:
@@ -198,10 +161,13 @@ class InferencePipeline:
 
     def pipeline(self):
         error_task_id_list = []
+        # 保存模型输出的目录
+        os.makedirs(self.pred_path, exist_ok=True)
         if self.generation_strategy == GenerationStrategy.Holistic.value:
             result = []
             for cont in tqdm(self.file_cont):
                 pred = []
+                task_id = cont["task_id"]
                 try:
                     prompt = self.construct_prompt(GenerationStrategy.Holistic, cont)
                     for _ in range(self.SAMPLE_NUMS):
@@ -209,7 +175,10 @@ class InferencePipeline:
                         pred.append(outputs)
                     cont['predict'] = pred
                     result.append(cont)
-                    self.save_result(result)
+                    pred_file_path = os.path.join(self.pred_path, f"{task_id}.py")
+                    with open(pred_file_path, 'w') as f:
+                        f.write(pred[0])
+                    #self.save_result(result)
 
                 except Exception as e:
                     print(e)

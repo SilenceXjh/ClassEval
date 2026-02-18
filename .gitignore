@@ -1,1 +1,7 @@
 *.pyc
+__pycache__/
+test_dir/
+docker
+expriment_outputs
+*.json
+playground

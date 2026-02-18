@@ -2,22 +2,9 @@ import re
 from enum import Enum
 
 class ModelName(Enum):
-    Instruct_CodeGen = 0
-    WizardCoder = 1
-    Instruct_StarCoder = 2
-    InCoder = 3
-    PolyCoder = 4
-    SantaCoder = 5
-    Vicuna = 6
-    ChatGLM = 7
-    GPT_3_5 = 8
-    GPT_4 = 9
-    others = 10
-    Magicoder = 11
-    CodeGeeX2 = 12
-    DeepSeekCoder_inst = 13
-    Gemini_Pro = 14
-    CodeLlama_13b_inst = 15
+    DEEPSEEK_API = 0
+    QWEN_CODER = 1
+    QWEN_CODER_INST = 2
 
 class GenerationStrategy(Enum):
     Holistic = 0
@@ -28,17 +15,9 @@ class InferenceUtil:
 
     @staticmethod
     def generate_prompt(instruction, model_name):
-        if model_name == ModelName.DeepSeekCoder_inst.value or model_name == ModelName.Gemini_Pro.value:
+        if model_name == ModelName.DEEPSEEK_API.value or model_name == ModelName.QWEN_CODER_INST.value:
             return instruction
 
-        elif model_name == ModelName.Magicoder.value:
-            return f"""You are an exceptionally intelligent coding assistant that consistently delivers accurate and reliable responses to user instructions.
-
-@@ Instruction:
-{instruction}
-
-@@ Response:
-"""
         else:
             return f"""Below is an instruction that describes a task. Write a response that appropriately completes the request.
 
@@ -135,3 +114,15 @@ class InferenceUtil:
         method_code = '\n'.join(method_code_list)
         method_code = method_code.rstrip() + '\n'
         return method_code
+    
+    @staticmethod
+    def extract_python_code(generated_text: str) -> str:
+        """从生成的文本中提取 py 代码"""
+        if "```python" in generated_text:
+            code = generated_text.split("```python")[1].split("```")[0].strip()
+        elif "```" in generated_text:
+            code = generated_text.split("```")[1].split("```")[0].strip()
+        else:
+            code = generated_text.strip()
+
+        return code
