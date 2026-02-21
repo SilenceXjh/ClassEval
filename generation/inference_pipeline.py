@@ -51,7 +51,7 @@ class InferencePipeline:
             json.dump(result, f, indent=4)
 
     def model_generate(self, prompt):
-        if self.model_name == ModelName.DEEPSEEK_API:
+        if self.model_name == ModelName.DEEPSEEK_API.value:
             response = self.client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
@@ -123,28 +123,23 @@ class InferencePipeline:
             prompt = InferenceUtil.generate_prompt(instruction, self.model_name)
 
         elif strategy == GenerationStrategy.Incremental:
-            if self.model_name == ModelName.PolyCoder.value or self.model_name == ModelName.SantaCoder.value:
-                prompt = info['skeleton']
-            else:
-                prompt = info['instruction'] + info['skeleton']
-                prompt = InferenceUtil.generate_prompt(prompt, self.model_name)
+            prompt = info['instruction'] + info['skeleton']
+            prompt = InferenceUtil.generate_prompt(prompt, self.model_name)
 
         elif strategy == GenerationStrategy.Compositional:
-            if self.model_name == ModelName.PolyCoder.value or self.model_name == ModelName.SantaCoder.value:
-                prompt = info['skeleton']
-            else:
-                prompt = info['instruction'] + info['skeleton']
-                prompt = InferenceUtil.generate_prompt(prompt, self.model_name)
+            prompt = info['instruction'] + info['skeleton']
+            prompt = InferenceUtil.generate_prompt(prompt, self.model_name)
 
         return prompt
 
     def post_process(self, result):
         if self.generation_strategy == GenerationStrategy.Incremental.value:
-            for cont in result:
-                pred = []
-                for result in cont['predict']:
-                    pred.append(result[-1])
-                cont['predict'] = pred
+            # for cont in result:
+            #     pred = []
+            #     for result in cont['predict']:
+            #         pred.append(result[-1])
+            #     cont['predict'] = pred
+            return
         elif self.generation_strategy == GenerationStrategy.Compositional.value:
             for cont in result:
                 cont['raw_output'] = cont['predict'].copy()
@@ -188,6 +183,7 @@ class InferencePipeline:
         elif self.generation_strategy == GenerationStrategy.Incremental.value:
             result = []
             for cont in tqdm(self.file_cont):
+                task_id = cont["task_id"]
                 cont['predict'] = []
                 cont['raw_output'] = []
                 for _ in range(self.SAMPLE_NUMS):
@@ -215,8 +211,12 @@ class InferencePipeline:
                             class_text += '\n\n' + generated_method_code
                             pred.append(class_text)
 
-                        cont['predict'].append(pred)
+                        cont['predict'].append(class_text)
                         cont['raw_output'].append(raw_output)
+
+                        pred_file_path = os.path.join(self.pred_path, f"{task_id}.py")
+                        with open(pred_file_path, 'w') as f:
+                            f.write(class_text)
                         
                     except Exception as e:
                         print(e)
@@ -224,12 +224,13 @@ class InferencePipeline:
                         error_task_id_list.append(cont['task_id'])
 
                 result.append(cont)
-                self.save_result(result)
 
         elif self.generation_strategy == GenerationStrategy.Compositional.value:
             result = []
             for cont in tqdm(self.file_cont):
                 cont['predict'] = []
+                cont['raw_output'] = []
+                task_id = cont["task_id"]
                 for _ in range(self.SAMPLE_NUMS):
                     pred = []
                     try:
@@ -237,6 +238,7 @@ class InferencePipeline:
                         methods_info = cont['methods_info']
                         imports = '\n'.join(cont['import_statement'])
                         class_init = InferenceUtil.add_desc_to_init(cont['class_description'], cont['class_constructor'])
+                        full_class_text = imports + '\n' + class_init
                         for method_to_generate in methods_info:
                             class_text = imports + '\n' + class_init
                             # gather each method's signature to consruct class level skeleton
@@ -252,9 +254,17 @@ class InferencePipeline:
 
                             # generate model output
                             outputs = self.model_generate(prompt)
+                            generated_method_code = InferenceUtil.extract_method_code(outputs, method_name)
+                            full_class_text += '\n\n' + generated_method_code
+
                             pred.append(outputs)
 
-                        cont['predict'].append(pred)
+                        cont['predict'].append(full_class_text)
+                        cont['raw_output'].append(pred)
+
+                        pred_file_path = os.path.join(self.pred_path, f"{task_id}.py")
+                        with open(pred_file_path, 'w') as f:
+                            f.write(full_class_text)
                         
                     except Exception as e:
                         print(e)
@@ -262,11 +272,11 @@ class InferencePipeline:
                         error_task_id_list.append(cont['task_id'])
 
                 result.append(cont)
-                self.save_result(result)
+                
         else:
             print("Unknown Generation Strategy")
             return
         
         print("error_task_id_list: ", error_task_id_list)
-        self.post_process(result)
+        # self.post_process(result)
         self.save_result(result)

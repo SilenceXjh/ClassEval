@@ -5,3 +5,5 @@ docker
 expriment_outputs
 *.json
 playground
+*_results/
+nohup.out

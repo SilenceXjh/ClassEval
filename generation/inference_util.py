@@ -19,13 +19,7 @@ class InferenceUtil:
             return instruction
 
         else:
-            return f"""Below is an instruction that describes a task. Write a response that appropriately completes the request.
-
-### Instruction:
-{instruction}
-
-### Response:
-"""
+            raise NotImplementedError()
 
     @staticmethod
     def get_leading_spaces(string):

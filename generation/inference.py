@@ -16,12 +16,6 @@ def args_init():
         help="Whether to generate model results with greedy strategy",
     )
     parser.add_argument(
-        "--output_path",
-        type=str,
-        default="model_output.json",
-        help="output file path",
-    )
-    parser.add_argument(
         "--cuda",
         type=int,
         nargs="+",  # Accept one or more integers
@@ -37,7 +31,7 @@ def args_init():
     parser.add_argument(
         "--model",
         type=int,
-        default=2,
+        default=0,
         help="DEEPSEEK_API = 0, QWEN_CODER = 1, QWEN_CODER_INST = 2",
     )
     parser.add_argument(
@@ -65,9 +59,15 @@ def args_init():
         help="The number of code samples that are randomly generated for each task.",
     )
     parser.add_argument(
+        "--output_path",
+        type=str,
+        default="ds_output.json",
+        help="output file path",
+    )
+    parser.add_argument(
         "--pred_path",
         type=str,
-        default="/data0/xjh/ClassEval/expriment_outputs/qwen_inst_predictions_hoslitic",
+        default="/data0/xjh/ClassEval/expriment_outputs/ds_predictions_hoslistic",
         help="pred output path",
     )
     args = parser.parse_args()

@@ -3,6 +3,7 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
+import ast
 
 DOCKER_IMAGE = "python:3.10-slim"
 
@@ -35,7 +36,7 @@ script_suffix = """if __name__ == '__main__':
 def construct_file_content(code_str, test_str):
     return code_str + "\n\n" + test_str + "\n\n" + script_suffix
 
-def run_single_sample(code_str, test_str) -> bool:
+def run_single_sample(code_str, test_str):
     with tempfile.TemporaryDirectory(dir="/data0/xjh/tmp") as tmpdir:
         tmpdir = Path(tmpdir)
 
@@ -73,40 +74,31 @@ def run_single_sample(code_str, test_str) -> bool:
                 timeout=20
             )
 
+        except Exception as e:
+            print(e)
+            return False, None
+
         finally:
             # 4. 清理：无论成功失败，都删除容器
             subprocess.run(["docker", "rm", "-f", "temp_worker"], capture_output=True)
 
-        # result = subprocess.run(
-        #     [
-        #         "docker", "run",
-        #         "--rm",
-        #         "-v", f"{tmpdir}:/app",
-        #         '-w', '/app',
-        #         "--network", "host",
-        #         "--dns", "8.8.8.8",
-        #         "--dns", "114.114.114.114",
-        #         "-e", "http_proxy=http://210.28.134.91:8888",
-        #         "-e", "https_proxy=http://210.28.134.91:8888",
-        #         DOCKER_IMAGE,
-        #         "sh", "-c", "python install_dependencies.py && python solution.py"
-        #     ],
-        #     capture_output=True,
-        #     text=True,
-        #     timeout=20
-        # )
-
     if result.returncode != 0:
         print("执行失败:", result.stderr)
         print("stdout:", result.stdout)
-        return False
+        return False, None
+    
+    inner_output = result.stdout
+    start_idx = inner_output.rfind('{')
+    end_idx = inner_output.rfind('}')
+    dict_str = inner_output[start_idx : end_idx + 1]
+    data_dict = ast.literal_eval(dict_str)
 
     if "ALL TESTS PASSED" in result.stdout:
         print("测试通过")
-        return True
+        return True, data_dict
     
     print("测试失败:", result.stdout)
-    return False
+    return False, data_dict
 
 
 def evaluate(json_path):
@@ -116,22 +108,32 @@ def evaluate(json_path):
     total = 0
     right = 0
 
+    testcase_total = 0
+    testcase_passed = 0
+
     for sample in data:
         total += 1
 
         code = sample["predict"][0]
         test_code = sample["test"]
 
-        res = run_single_sample(code, test_code)
-        if res:
+        success, data_dict = run_single_sample(code, test_code)
+        if success:
             right += 1
+
+        if data_dict:
+            testcase_total += data_dict["total"]
+            testcase_passed += data_dict["passed"]
 
     print("total:", total)
     print("right:", right)
 
+    print("testcase total:", testcase_total)
+    print("testcase passed:", testcase_passed)
+
 
 def main():
-    output_file_path = "/data0/xjh/ClassEval/generation/model_output.json"
+    output_file_path = "/data0/xjh/ClassEval/custom_generation/holistic.json"
     evaluate(output_file_path)
 
 if __name__ == "__main__":
