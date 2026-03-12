@@ -17,7 +17,7 @@ def model_generate(prompt: str, model, tokenizer):
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=512, 
+            max_new_tokens=1024, 
             temperature=0.2,
             top_p=0.95,
             do_sample=True,
@@ -28,7 +28,7 @@ def model_generate(prompt: str, model, tokenizer):
     if prompt in generated_text:
         generated_text = generated_text.split(prompt)[-1].strip()
     
-    print("model generated text:", generated_text)
+    # print("model generated text:", generated_text)
     return generated_text
 
 def extract_python_code(generated_text: str):

@@ -1,7 +1,6 @@
 import json
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from utils import model_generate, extract_python_code
 
 data_path = "/data0/xjh/ClassEval/data/ClassEval_data.json"
 model_path = "/data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct/"
@@ -44,6 +43,47 @@ def add_desc_to_init(desc, class_init):
         return class_init
 
 
+def model_generate(prompt: str):
+    messages = [
+        {"role": "system", "content": "You are an expert Python programmer."},
+        {"role": "user", "content": prompt}
+    ]
+    text = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+    # print("model input text:", text)
+    inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=512, 
+            temperature=0.2,
+            top_p=0.95,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id
+        )
+    
+    generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    if prompt in generated_text:
+        generated_text = generated_text.split(prompt)[-1].strip()
+    
+    print("model generated text:", generated_text)
+    return generated_text
+
+def extract_python_code(generated_text: str):
+    if "```python" in generated_text:
+        code = generated_text.split("```python")[1].split("```")[0].strip()
+    elif "```" in generated_text:
+        code = generated_text.split("```")[1].split("```")[0].strip()
+    else:
+        code = generated_text.strip()
+
+    return code
+
+
 def process_single_sample(problem_info: dict):
     class_name = problem_info["class_name"]
     method_info_list = problem_info["methods_info"]
@@ -64,15 +104,18 @@ def process_single_sample(problem_info: dict):
     for method_name in sorted_methods:
         method_info = method_info_dict[method_name]
         class_text_desc = class_text + "\n\n    " + method_info['method_description']
+        test_code = method_info["test_code"]
         # print("class_text_desc:")
         # print(class_text_desc)
         prompt = f"Please complete {method_name} method in the following class {class_name}\n\n"
         prompt += class_text_desc + "\n\n"
+        prompt += "You implementation should pass the following tests:\n"
+        prompt += test_code + "\n\n"
         prompt += "Only provide the method implementation without any explanation."
         # print("prompt:")
         # print(prompt)
 
-        generated_text = model_generate(prompt, model, tokenizer)
+        generated_text = model_generate(prompt)
         code = extract_python_code(generated_text)
         # print("code:")
         # print(code)

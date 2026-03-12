@@ -1,14 +1,10 @@
 import json
-import os
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from utils import model_generate, extract_python_code
 
 data_path = "/data0/xjh/ClassEval/data/ClassEval_data.json"
-model_path = "/data1/model/qwen/Qwen/Qwen2.5-Coder-1.5B-Instruct/"
-output_dir = "/data0/xjh/ClassEval/custom_generation/qwen1.5b_holistic"
-
-os.makedirs(output_dir, exist_ok=True)
+model_path = "/data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct/"
 
 with open(data_path, "r") as f:
     data = json.load(f)
@@ -23,9 +19,15 @@ model = AutoModelForCausalLM.from_pretrained(
 
 def process_single_sample(problem_info: dict):
     class_skeleton = problem_info["skeleton"]
+    test_code = problem_info["test"]
     prompt = "Please implement the following the class.\n"
     prompt += class_skeleton
+    prompt += "\nYour implementation should pass the following tests:\n"
+    prompt += test_code
     prompt += "\nOnly provide the method implementation without any explanation."
+
+    # print("prompt:")
+    # print(prompt)
 
     generated_text = model_generate(prompt, model, tokenizer)
     code = extract_python_code(generated_text)
@@ -36,7 +38,7 @@ def main():
     for problem in data:
         task_id = problem["task_id"]
         code = process_single_sample(problem)
-        with open(os.path.join(output_dir, f"{task_id}.py") , "w") as f:
+        with open(f"{task_id}.py", "w") as f:
             f.write(code)
 
 
