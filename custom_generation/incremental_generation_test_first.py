@@ -1,9 +1,15 @@
+import ast
 import json
+import os
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from utils import model_generate, extract_python_code
 
 data_path = "/data0/xjh/ClassEval/data/ClassEval_data.json"
 model_path = "/data1/model/qwen/Qwen/Qwen2.5-Coder-7B-Instruct/"
+output_dir = "/data0/xjh/ClassEval/custom_generation/qwen7b_incremental_test_first"
+
+os.makedirs(output_dir, exist_ok=True)
 
 with open(data_path, "r") as f:
     data = json.load(f)
@@ -43,45 +49,41 @@ def add_desc_to_init(desc, class_init):
         return class_init
 
 
-def model_generate(prompt: str):
-    messages = [
-        {"role": "system", "content": "You are an expert Python programmer."},
-        {"role": "user", "content": prompt}
+def trim_test_class(source: str) -> str:
+    """
+    保留 setUp/tearDown 方法和第一个 test 方法，删除其余 test 方法和 import 语句。
+    """
+    tree = ast.parse(source)
+    lines = source.splitlines(keepends=True)
+    lines_to_remove = set()
+
+    for node in ast.walk(tree):
+        # 删除 import 语句
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for i in range(node.lineno - 1, node.end_lineno):
+                lines_to_remove.add(i)
+
+        # 处理类中的 test 方法
+        if not isinstance(node, ast.ClassDef):
+            continue
+
+        first_test_seen = False
+        for item in node.body:
+            if not isinstance(item, ast.FunctionDef):
+                continue
+            if item.name.startswith('test'):
+                if not first_test_seen:
+                    first_test_seen = True
+                else:
+                    for i in range(item.lineno - 1, item.end_lineno):
+                        lines_to_remove.add(i)
+
+    result_lines = [
+        line for i, line in enumerate(lines)
+        if i not in lines_to_remove
     ]
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True
-    )
-    # print("model input text:", text)
-    inputs = tokenizer(text, return_tensors="pt").to(model.device)
-    
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=512, 
-            temperature=0.2,
-            top_p=0.95,
-            do_sample=True,
-            pad_token_id=tokenizer.eos_token_id
-        )
-    
-    generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    if prompt in generated_text:
-        generated_text = generated_text.split(prompt)[-1].strip()
-    
-    print("model generated text:", generated_text)
-    return generated_text
 
-def extract_python_code(generated_text: str):
-    if "```python" in generated_text:
-        code = generated_text.split("```python")[1].split("```")[0].strip()
-    elif "```" in generated_text:
-        code = generated_text.split("```")[1].split("```")[0].strip()
-    else:
-        code = generated_text.strip()
-
-    return code
+    return ''.join(result_lines)
 
 
 def process_single_sample(problem_info: dict):
@@ -104,18 +106,44 @@ def process_single_sample(problem_info: dict):
     for method_name in sorted_methods:
         method_info = method_info_dict[method_name]
         class_text_desc = class_text + "\n\n    " + method_info['method_description']
-        test_code = method_info["test_code"]
         # print("class_text_desc:")
         # print(class_text_desc)
-        prompt = f"Please complete {method_name} method in the following class {class_name}\n\n"
-        prompt += class_text_desc + "\n\n"
-        prompt += "You implementation should pass the following tests:\n"
-        prompt += test_code + "\n\n"
-        prompt += "Only provide the method implementation without any explanation."
-        # print("prompt:")
-        # print(prompt)
 
-        generated_text = model_generate(prompt)
+        # generate some testcases for the method
+        method_tests = method_info["test_code"]
+        trimed_method_tests = trim_test_class(method_tests)
+        gen_test_prompt = f"""Please generate some testcases for method {method_name} in the following class {class_name}
+```
+{class_text_desc}
+```
+
+You can generate testcase like this:
+```
+{trimed_method_tests}
+```
+Generated 3-5 testcases in a 'unittest.TestCase' class. Only output the generated testcases without any explanation."""
+        print("------gen test prompt------")
+        print(gen_test_prompt)
+        generated_text = model_generate(gen_test_prompt, model, tokenizer)
+        gen_tests = extract_python_code(generated_text)
+        print("------gen tests------")
+        print(gen_tests)
+
+        prompt = f"""Please complete {method_name} method in the following class {class_name}
+```
+{class_text_desc}
+```
+
+Your implementation should pass the following tests:
+```
+{gen_tests}
+```
+Only provide the method implementation without any explanation.
+"""
+        print("------prompt------")
+        print(prompt)
+
+        generated_text = model_generate(prompt, model, tokenizer)
         code = extract_python_code(generated_text)
         # print("code:")
         # print(code)
@@ -133,7 +161,7 @@ def main():
         final_class_text = process_single_sample(problem)
         # print("final class:")
         # print(final_class_text)
-        with open(f"{task_id}.py", "w") as f:
+        with open(os.path.join(output_dir, f"{task_id}.py"), "w") as f:
             f.write(final_class_text)
 
 

@@ -243,7 +243,7 @@ def evaluate(code_path, data_path):
     
 
 def main():
-    code_path = "/data0/xjh/ClassEval/custom_generation/qwen1.5b_incremental"
+    code_path = "/data0/xjh/ClassEval/custom_generation/ds_tdd"
     data_path = "/data0/xjh/ClassEval/data/ClassEval_data.json"
     evaluate(code_path, data_path)
 

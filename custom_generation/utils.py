@@ -1,3 +1,4 @@
+from openai import OpenAI
 import torch
 
 
@@ -17,7 +18,7 @@ def model_generate(prompt: str, model, tokenizer):
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=1024, 
+            max_new_tokens=4096, 
             temperature=0.2,
             top_p=0.95,
             do_sample=True,
@@ -30,6 +31,23 @@ def model_generate(prompt: str, model, tokenizer):
     
     # print("model generated text:", generated_text)
     return generated_text
+
+
+def ds_api_generate(prompt: str, client: OpenAI, max_new_tokens=4096):
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=[
+            {"role": "system", "content": "You are an expert Python programmer."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.2,
+        max_tokens=max_new_tokens,
+        n=1,
+        stream=False
+    )
+    generated_text = response.choices[0].message.content
+    return generated_text
+
 
 def extract_python_code(generated_text: str):
     if "```python" in generated_text:
